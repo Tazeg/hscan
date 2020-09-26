@@ -1,0 +1,19 @@
+name: Go-tests
+
+on: push
+
+jobs:
+  go-test:
+    name: Test app
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@master
+      - name: Install deps1
+        run: go get github.com/gabriel-vasile/mimetype
+      - name: Install deps2
+        run: go get github.com/gammazero/workerpool
+      - name: Install deps3
+        run: go get github.com/saracen/walker
+      - name: Test
+        run: go test
