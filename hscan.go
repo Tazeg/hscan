@@ -43,7 +43,7 @@ var logError *os.File
 var wp = workerpool.New(5)
 
 // const
-const strVersion = "1.0"
+const strVersion = "1.0.1"
 
 // hash databases file names, i.e. checksumFilenames[0]="nsrl.txt"
 var checksumFilenames []string
@@ -269,7 +269,7 @@ func loadChecksumFile(filename string, idx uint8) {
   nbSha1Match[idx] = 0
 
   endTime := time.Now()
-  fmt.Printf("%d uniq checksum found in %q\n", cpt, endTime.Sub(startTime))
+  fmt.Printf("%d lines, %d uniq checksum found in %q\n", cpt, len(arrSha1), endTime.Sub(startTime))
 }
 
 func writeSha1Log(s string) {
