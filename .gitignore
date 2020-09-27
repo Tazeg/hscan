@@ -1,3 +1,5 @@
 hscan
 hscan.exe
-*.log
+*.csv
+*.db
+*.db-journal

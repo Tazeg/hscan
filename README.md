@@ -1,7 +1,7 @@
 # HSCAN
 
 Scans recursively a path to match given sha1 checksums.
-Usefull to find duplicate files, or to find relevant/irrelevant files for which you already have the checksums.
+Usefull to find duplicate files, or to find relevant/irrelevant/unknown files.
 
 ## USAGE
 
@@ -13,7 +13,7 @@ hscan -d <PATH> -db <PATH>
       Directory containing text files with sha1 to search (1 checksum by line)
 ```
 
-## Examples
+## EXAMPLE
 
 You have the file `dbpath/sha1.txt` :
 
@@ -41,16 +41,21 @@ RESULT
 Done in 292.09673ms
 ```
 
-The files `hscan_match.log` and `hscan_error.log` are created :
+Matching files, unknown files, and errors are written in real time into `result.csv` :
 
+```csv
+# sha1,dbfile,filename,error
+dff8a1731f59ccad056b346102d1e1d014b843f3,nsrl_uniq.txt,/home/jeff/tmp/.vscode/settings.json,
+0841f15b7436126cb2877b094d632dbc2707eda0,,/home/jeff/tmp/img_20190502_175115.jpg,
+98fb7452234c1d7666a54a53eb7340e501d8c173,sha1test.txt,/home/jeff/tmp/602352874.jpg,
+,,/home/jeff/tmp/mysqltmp/undo_001,open /home/jeff/tmp/mysqltmp/undo_001: permission denied
 ```
-# hscan_match.log
-64725786589f263f0ecc1da55c2bcac7eb18e681 sha1.txt tmp/runTest.sh
-fed5cdfb1c9b121ea6d042dd54842407df3b4a6b sha1.txt tmp/files/CONTRIBUTING.md
-12d81f50767d4e09aa7877da077ad9d1b915d75b sha1.txt tmp/test/LICENSE
-```
+
+A SQLite3 database named `result.db` with the same data as the CSV is created at the end of the process.
 
 ## INSTALL
+
+Get the [latest release](https://github.com/Tazeg/hscan/releases) or download and install from source :
 
 ```bash
 git config --global --add url."git@github.com:".insteadOf "https://github.com/"

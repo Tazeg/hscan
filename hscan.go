@@ -1,8 +1,10 @@
 package main
 
 import (
+  _ "github.com/mattn/go-sqlite3"
   "bufio"
   "crypto/sha1"
+  "database/sql"
   "flag"
   "fmt"
   "github.com/gabriel-vasile/mimetype"
@@ -35,21 +37,22 @@ var nbTotalSha1Match = 0
 // maps of relevant sha1 to look for
 var arrSha1 = map[string]uint8{} // arrSha1[strSha1] = db index filename
 
-// log files
-var logSha1 *os.File
-var logError *os.File
-
+// output csv file
+var csvFile *os.File
 // limited worker pool to calculate hash files to avoid "too many open files"
 var wp = workerpool.New(5)
 
 // const
-const strVersion = "1.0.1"
+const strVersion = "1.1.0"
 
 // hash databases file names, i.e. checksumFilenames[0]="nsrl.txt"
 var checksumFilenames []string
 
 // concurrency to update map
 var l = sync.Mutex{}
+
+// sqlite3
+var stmt *sql.Stmt
 
 
 //-----------------------------------------------------------------------------
@@ -66,15 +69,15 @@ func main() {
       nbDirs++
       return nil
     } 
-		
-		// skip symbolic links and 0 size files (i.e. /dev/dri/card0)
+
+    // skip symbolic links and 0 size files (i.e. /dev/dri/card0)
     if !(info.Mode() & os.ModeSymlink == os.ModeSymlink) && info.Size() > 0 {
       // fmt.Printf("path:%q name:%q size:%d\n", path, info.Name(), info.Size())
 
       wp.Submit(func() {
         // arbitraty skip files > 238,41 Mb (250000000 b)
         if info.Size() > 250000000 {
-          writeErrorLog(fmt.Sprintf("skip file size > 238 Mb : %q\n", path))
+          writeResult("", "", path, "skip file size > 238 Mb")
           return
         }
         workerPoolAction(path)
@@ -88,23 +91,44 @@ func main() {
 
   // error function called for every error encountered
   errorCallbackOption := walker.WithErrorCallback(func(path string, err error) error {
-    writeErrorLog(fmt.Sprintf("could not read file %q: %v\n", path, err))
+    writeResult("", "", path, fmt.Sprintf("%v", err))
     nbUnreadableDir++
     return nil
   })
 
-  // create log files
-  logSha1, err = os.OpenFile("hscan_match.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+  // create csv file
+  csvFile, err = os.OpenFile("result.csv", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
   if err != nil {
     panic(err)
   }
-  defer logSha1.Close()
-  logError, err = os.OpenFile("hscan_error.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+  defer csvFile.Close()
+
+  // create db
+  var db *sql.DB
+  db, err = sql.Open("sqlite3", "./result.db")
   if err != nil {
     panic(err)
   }
-  defer logError.Close()
-  
+  defer db.Close()
+  dbExec(db, `CREATE TABLE IF NOT EXISTS "files" (
+    "sha1" TEXT,
+    "dbfile" TEXT NOT NULL,
+		"filename" TEXT NOT NULL,
+		"error" TEXT
+  )`)
+  dbExec(db, "DELETE FROM files")
+  var tx *sql.Tx
+  tx, err = db.Begin()
+  if err != nil {
+    panic(err)
+  }
+  defer tx.Commit()
+  stmt, err = tx.Prepare("INSERT INTO files VALUES (?,?,?,?)")
+  if err != nil {
+    panic(err)
+  }
+  defer stmt.Close()
+
   // load sha1 files
   loadDbFiles(*argDbSha1)
 
@@ -221,7 +245,7 @@ func showInfos() {
 func sha1sum(filename string) [20]byte {
   data, err := ioutil.ReadFile(filename)
   if err != nil {
-    writeErrorLog(fmt.Sprintf("could not sha1sum file %q: %v\n", filename, err))
+    writeResult("", "", filename, fmt.Sprintf("%v", err))
     nbUnreadableFile++
     return [20]byte{}
   }
@@ -255,6 +279,7 @@ func loadChecksumFile(filename string, idx uint8) {
 
   l := ""
   cpt := 0
+  previousLen := len(arrSha1)
   scanner := bufio.NewScanner(file)
   for scanner.Scan() {
     l = strings.TrimSpace(scanner.Text())
@@ -269,15 +294,15 @@ func loadChecksumFile(filename string, idx uint8) {
   nbSha1Match[idx] = 0
 
   endTime := time.Now()
-  fmt.Printf("%d lines, %d uniq checksum found in %q\n", cpt, len(arrSha1), endTime.Sub(startTime))
+  fmt.Printf("%d lines, %d uniq checksum found in %q\n", cpt, len(arrSha1) - previousLen, endTime.Sub(startTime))
 }
 
-func writeSha1Log(s string) {
-  if _, err := logSha1.WriteString(s); err != nil { panic(err) }
-}
-
-func writeErrorLog(s string) {
-  if _, err := logError.WriteString(s); err != nil { panic(err) }
+func writeResult(sha1 string, dbfile string, filename string, errStr string) {
+  _, err := stmt.Exec(sha1, dbfile, filename, errStr)
+  if err != nil {
+    panic(err)
+  }
+  if _, err1 := csvFile.WriteString(sha1 + "," + dbfile + "," + filename + "," + errStr + "\n"); err1 != nil { panic(err1) }
 }
 
 // Action on a file within the worker pool.
@@ -286,14 +311,15 @@ func writeErrorLog(s string) {
 func workerPoolAction(filename string) {
   bSha1 := sha1sum(filename) // binary
   sSha1 := fmt.Sprintf("%x", bSha1) // string
+  if sSha1 == "0000000000000000000000000000000000000000" { return } // we had an error already logged and we got empty sha1
 
   // sha1 exists in arrSha1 ?
   // info : arrSha1[sSha1] is the db txt file name
   if _, ok := arrSha1[sSha1]; ok {
     // we have a sha1 match
-    writeSha1Log(sSha1 + " " + checksumFilenames[arrSha1[sSha1]] + " " + filename + "\n")
+    writeResult(sSha1, checksumFilenames[arrSha1[sSha1]], filename, "")
 
-		// can't update a map concurrently otherwhite we get "fatal error: concurrent map writes"
+    // can't update a map concurrently otherwhite we get "fatal error: concurrent map writes"
     l.Lock()
     nbSha1Match[arrSha1[sSha1]]++
     l.Unlock()
@@ -301,5 +327,15 @@ func workerPoolAction(filename string) {
     nbTotalSha1Match++
     showInfos()
     return
+  }
+
+  // log also unknown file
+  writeResult(sSha1, "", filename, "")
+}
+
+func dbExec (db *sql.DB, sql string) {
+  _, err := db.Exec(sql)
+  if err != nil {
+    panic(err)
   }
 }
