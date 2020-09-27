@@ -79,3 +79,29 @@ go install
 ```bash
 go test
 ```
+
+## BENCHMARKS
+
+Tried on :
+
+- OS : Linux
+- HDD : 128 Gb SSD + 2 Tb HDD
+- CPU: Intel(R) Xeon(R) CPU E5-1660 v3 @ 3.00GHz
+- Memory: 32 Gb
+
+Loading a NIST/NSRL file of 1,2Gb containing 29,459,433 took 22.14s.
+Scanning 2Tb and 128 Gb of data took 1h32m34s. This depends on the data stored and the free space on the drive. Further tests will be done shortly.
+
+```bash
+$> hscan -d / -db bases_hash/
+Loading database file "bases_hash/nsrl_sha1_uniq.txt"... 29459433 uniq checksum found in "22.146464941s"
+
+Scanning path "/"...
+  2012574 files - 12091 unreadable files - 274715 dirs - 2510 unreadable dirs - 287870 matches
+
+RESULT
+  nsrl_sha1_uniq.txt                       : 287870 matches
+  Total                                    : 287870 matches
+
+Done in 1h32m34.505006098s
+```
